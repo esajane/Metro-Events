@@ -2,18 +2,20 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate} from 'react-router-dom';
 import Login from './components/Login';
 import Register from './components/Register';
-import Dashboard from './components/Dashboard'; 
+import Dashboard from './components/Dashboard';
+import Dashboard2 from './components/Dashboard2';
+import Event from './components/Event';
 import { createTheme, ThemeProvider } from '@mui/material';
 import { AuthProvider, useAuth } from './AuthContext';
 
 interface ProtectedRouteProps {
-  children: React.ReactNode; 
+  children: React.ReactNode;
 }
 
 const theme = createTheme({
   palette: {
     background: {
-      default: '#fff' 
+      default: '#fff'
     },
     mode: 'light',
     primary: {
@@ -28,7 +30,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
 };
 
 function App() {
-  return ( 
+  return (
     <AuthProvider>
       <ThemeProvider theme={theme}>
         <Router>
@@ -36,6 +38,8 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/dashboard2" element={<ProtectedRoute><Dashboard2 /></ProtectedRoute>} />
+            <Route path="/event" element={<Event />} />
             <Route path="*" element={<Navigate to="/login" />} /> {/* Redirects any unknown paths to login */}
           </Routes>
         </Router>
