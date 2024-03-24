@@ -1,8 +1,20 @@
 const mysql = require("mysql2/promise");
 const db = require("../database");
 
+async function createNotification(type, recipientId, eventId, message) {
+  try {
+    await db.query(
+      "INSERT INTO notifications (type, recipientId, eventId, message) VALUES (?, ?, ?, ?)",
+      [type, recipientId, eventId, message]
+    );
+  } catch (error) {
+    console.error("Error creating notification:", error);
+  }
+}
+
 exports.getAllEvents = async (req, res) => {
   try {
+    // Initialize sa events table
     await db.query(`
       CREATE TABLE IF NOT EXISTS events (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -12,6 +24,19 @@ exports.getAllEvents = async (req, res) => {
         location VARCHAR(255) NOT NULL,
         organizerId INT,
         FOREIGN KEY (organizerId) REFERENCES users(id)
+      )
+    `);
+
+    // Initialize sa notifications table
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        type VARCHAR(50) NOT NULL,
+        recipientId INT,
+        eventId INT,
+        message TEXT,
+        status VARCHAR(20) DEFAULT 'unread',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
@@ -112,8 +137,25 @@ exports.cancelEvent = async (req, res) => {
       return res.status(403).json({ message: "Forbidden" });
     }
 
+    const [participantRows] = await db.query(
+      "SELECT userId FROM Participants WHERE eventId = ? AND status = ?",
+      [eventId, "confirmed"]
+    );
+
     await db.query("DELETE FROM events WHERE id = ?", [eventId]);
-    res.json({ message: "Event deleted successfully" });
+
+    // notify participants
+    const notifications = participantRows.map(async (participant) => {
+      const recipientId = participant.userId;
+      await db.query(
+        "INSERT INTO notifications (type, recipientId, eventId, message) VALUES (?, ?, ?, ?)",
+        ["event_cancelled", recipientId, eventId, `Event has been cancelled`]
+      );
+    });
+
+    await Promise.all(notifications);
+
+    res.json({ message: "Event cancelled successfully" });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Internal server error" });
@@ -164,6 +206,15 @@ exports.acceptJoinRequest = async (req, res) => {
       "accepted",
       requestId,
     ]);
+
+    // notify
+    await createNotification(
+      "join_request_accepted",
+      requestRows[0].userId,
+      requestRows[0].eventId,
+      "Your join request has been accepted"
+    );
+
     res.json({ message: "Join request accepted successfully" });
   } catch (error) {
     console.error(error);
@@ -186,6 +237,15 @@ exports.rejectJoinRequest = async (req, res) => {
       "rejected",
       requestId,
     ]);
+
+    // notify
+    await createNotification(
+      "join_request_rejected",
+      requestRows[0].userId,
+      requestRows[0].eventId,
+      "Your join request has been rejected"
+    );
+
     res.json({ message: "Join request rejected successfully" });
   } catch (error) {
     console.error(error);
