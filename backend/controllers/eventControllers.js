@@ -14,32 +14,6 @@ async function createNotification(type, recipientId, eventId, message) {
 
 exports.getAllEvents = async (req, res) => {
   try {
-    // Initialize sa events table
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS events (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        description TEXT,
-        date DATETIME NOT NULL,
-        location VARCHAR(255) NOT NULL,
-        organizerId INT,
-        FOREIGN KEY (organizerId) REFERENCES users(id)
-      )
-    `);
-
-    // Initialize sa notifications table
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS notifications (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        type VARCHAR(50) NOT NULL,
-        recipientId INT,
-        eventId INT,
-        message TEXT,
-        status VARCHAR(20) DEFAULT 'unread',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
     const [rows] = await db.query("SELECT * FROM events");
     res.json(rows);
   } catch (error) {
@@ -75,9 +49,10 @@ exports.createEvent = async (req, res) => {
   const { name, description, date, location } = req.body;
   const organizerId = user.id;
   try {
+    // Create the event in the database with status 'active'
     await db.query(
-      "INSERT INTO events (name, description, date, location, organizerId) VALUES (?, ?, ?, ?, ?)",
-      [name, description, date, location, organizerId]
+      "INSERT INTO events (name, description, date, location, organizerId, status) VALUES (?, ?, ?, ?, ?, ?)",
+      [name, description, date, location, organizerId, "active"]
     );
     res.status(201).json({ message: "Event created successfully" });
   } catch (error) {
@@ -97,7 +72,6 @@ exports.updateEvent = async (req, res) => {
   const { name, description, date, location } = req.body;
   const organizerId = user.id;
   try {
-    // check if event organizer is the same as the user making the request
     const [eventRows] = await db.query(
       "SELECT * FROM events WHERE id = ? AND organizerId = ?",
       [eventId, organizerId]
@@ -127,6 +101,7 @@ exports.cancelEvent = async (req, res) => {
 
   const eventId = req.params.eventId;
   const organizerId = user.id;
+
   try {
     const [eventRows] = await db.query(
       "SELECT * FROM events WHERE id = ? AND organizerId = ?",
@@ -137,14 +112,17 @@ exports.cancelEvent = async (req, res) => {
       return res.status(403).json({ message: "Forbidden" });
     }
 
+    await db.query("UPDATE events SET status = ? WHERE id = ?", [
+      "cancelled",
+      eventId,
+    ]);
+
     const [participantRows] = await db.query(
       "SELECT userId FROM Participants WHERE eventId = ? AND status = ?",
       [eventId, "confirmed"]
     );
 
-    await db.query("DELETE FROM events WHERE id = ?", [eventId]);
-
-    // notify participants
+    // Notify cancel
     const notifications = participantRows.map(async (participant) => {
       const recipientId = participant.userId;
       await db.query(
@@ -167,7 +145,7 @@ exports.requestToJoinEvent = async (req, res) => {
   const eventId = req.params.eventId;
   const userId = user.id;
   try {
-    const [existingRows] = await pool.query(
+    const [existingRows] = await db.query(
       "SELECT * FROM Participants WHERE eventId = ? AND userId = ? AND status IN (?, ?)",
       [eventId, userId, "confirmed", "pending"]
     );
@@ -178,10 +156,11 @@ exports.requestToJoinEvent = async (req, res) => {
       });
     }
 
-    await pool.query(
-      "INSERT INTO JoinRequests (eventId, userId) VALUES (?, ?)",
-      [eventId, userId]
+    await db.query(
+      "INSERT INTO Participants (eventId, userId, status) VALUES (?, ?, ?)",
+      [eventId, userId, "pending"]
     );
+
     res
       .status(201)
       .json({ message: "Request to join event sent successfully" });
@@ -192,26 +171,24 @@ exports.requestToJoinEvent = async (req, res) => {
 };
 
 exports.acceptJoinRequest = async (req, res) => {
-  const { requestId } = req.params;
+  const { eventId, requestId } = req.params;
   try {
-    const [requestRows] = await pool.query(
-      "SELECT * FROM JoinRequests WHERE id = ?",
-      [requestId]
+    await db.query(
+      "UPDATE Participants SET status = ? WHERE eventId = ? AND id = ?",
+      ["confirmed", eventId, requestId]
     );
-    if (requestRows.length === 0) {
-      return res.status(404).json({ message: "Join request not found" });
-    }
 
-    await pool.query("UPDATE JoinRequests SET status = ? WHERE id = ?", [
-      "accepted",
-      requestId,
-    ]);
+    const [joinRequest] = await db.query(
+      "SELECT userId FROM Participants WHERE eventId = ? AND id = ?",
+      [eventId, requestId]
+    );
+    const userId = joinRequest[0].userId;
 
-    // notify
+    // Notify accept
     await createNotification(
       "join_request_accepted",
-      requestRows[0].userId,
-      requestRows[0].eventId,
+      userId,
+      eventId,
       "Your join request has been accepted"
     );
 
@@ -223,30 +200,90 @@ exports.acceptJoinRequest = async (req, res) => {
 };
 
 exports.rejectJoinRequest = async (req, res) => {
-  const { requestId } = req.params;
+  const { eventId, requestId } = req.params;
   try {
-    const [requestRows] = await pool.query(
-      "SELECT * FROM JoinRequests WHERE id = ?",
-      [requestId]
+    const [joinRequest] = await db.query(
+      "SELECT userId FROM Participants WHERE eventId = ? AND id = ?",
+      [eventId, requestId]
     );
-    if (requestRows.length === 0) {
-      return res.status(404).json({ message: "Join request not found" });
-    }
+    const userId = joinRequest[0].userId;
 
-    await pool.query("UPDATE JoinRequests SET status = ? WHERE id = ?", [
-      "rejected",
+    await db.query("DELETE FROM Participants WHERE eventId = ? AND id = ?", [
+      eventId,
       requestId,
     ]);
 
-    // notify
+    // Notify reject
     await createNotification(
       "join_request_rejected",
-      requestRows[0].userId,
-      requestRows[0].eventId,
+      userId,
+      eventId,
       "Your join request has been rejected"
     );
 
     res.json({ message: "Join request rejected successfully" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+exports.getUserNotifications = async (req, res) => {
+  const user = req.user;
+
+  try {
+    const [notificationRows] = await db.query(
+      "SELECT * FROM notifications WHERE recipientId = ?",
+      [user.id]
+    );
+
+    res.json(notificationRows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+exports.upvoteEvent = async (req, res) => {
+  const userId = req.user.id;
+  const eventId = req.params.eventId;
+
+  try {
+    const [existingUpvote] = await db.query(
+      "SELECT * FROM upvotes WHERE userId = ? AND eventId = ?",
+      [userId, eventId]
+    );
+
+    if (existingUpvote.length > 0) {
+      return res
+        .status(400)
+        .json({ message: "User has already upvoted this event" });
+    }
+
+    await db.query("INSERT INTO Upvotes (userId, eventId) VALUES (?, ?)", [
+      userId,
+      eventId,
+    ]);
+
+    res.status(201).json({ message: "Event upvoted successfully" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+exports.submitReview = async (req, res) => {
+  const userId = req.user.id;
+  const eventId = req.params.eventId;
+  const { rating, review } = req.body;
+
+  try {
+    await db.query(
+      "INSERT INTO reviews (userId, eventId, rating, review) VALUES (?, ?, ?, ?)",
+      [userId, eventId, rating, review]
+    );
+
+    res.status(201).json({ message: "Review submitted successfully" });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Internal server error" });

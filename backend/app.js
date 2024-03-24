@@ -3,6 +3,7 @@ const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const db = require("./database");
+const init = require("./init");
 
 require("dotenv").config();
 
@@ -24,6 +25,9 @@ async function checkConnection() {
   try {
     await db.getConnection();
     console.log("Database connected");
+
+    // initialize ang tables sa database
+    await init();
   } catch (error) {
     console.error("Error connecting to the database: ", error);
   }
