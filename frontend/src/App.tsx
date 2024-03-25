@@ -5,6 +5,7 @@ import Register from './components/Register';
 import Dashboard from './components/Dashboard';
 import Dashboard2 from './components/Dashboard2';
 import Event from './components/Event';
+import AdminDashboard from './components/AdminDashboard';
 import { createTheme, ThemeProvider } from '@mui/material';
 import { AuthProvider, useAuth } from './AuthContext';
 
@@ -40,6 +41,7 @@ function App() {
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/dashboard2" element={<ProtectedRoute><Dashboard2 /></ProtectedRoute>} />
             <Route path="/event" element={<Event />} />
+            <Route path="/admin" element={<AdminDashboard />} />
             <Route path="*" element={<Navigate to="/login" />} /> {/* Redirects any unknown paths to login */}
           </Routes>
         </Router>
