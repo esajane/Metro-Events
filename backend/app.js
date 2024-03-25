@@ -3,6 +3,7 @@ const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const db = require("./database");
+const authenticateToken = require("./middleware/authMiddleware");
 const init = require("./init");
 
 require("dotenv").config();
@@ -90,4 +91,84 @@ app.post("/login", async (req, res) => {
   } catch (error) {
     res.status(500).send({ message: "Login failed", error: error.message });
   }
+});
+
+
+app.get('/events', async (req, res) => {
+
+    const [events] = await db.query('SELECT * FROM events WHERE status = "active"');
+    res.json({ message: "Events endpoint reached successfully" });
+    res.json({ events });
+});
+
+
+app.get('/users/events', authenticateToken, async (req, res) => {
+    
+    const userId = req.user.id; 
+
+    const [userEvents] = await db.query(`
+        SELECT e.id, e.name, e.date, p.status
+        FROM events e
+        INNER JOIN participants p ON p.eventId = e.id
+        WHERE p.userId = ? AND e.status = 'active'`, [userId]);
+
+    res.json({ events: userEvents });
+});
+
+
+app.post('/events/:eventId/participants', async (req, res) => {
+    const eventId = req.params.eventId;
+    const userId = req.user.id; 
+
+    try {
+        
+        const [existingParticipant] = await db.query(
+            'SELECT * FROM participants WHERE eventId = ? AND userId = ?',
+            [eventId, userId]
+        );
+
+        if (existingParticipant.length > 0) {
+            return res.status(400).json({ message: 'User already a participant' });
+        }
+
+        
+        const [result] = await db.query(
+            'INSERT INTO participants (eventId, userId, status) VALUES (?, ?, "pending")',
+            [eventId, userId]
+        );
+
+        return res.status(201).json({ message: 'Request to join event submitted', participantId: result.insertId });
+    } catch (error) {
+        console.error('Error joining event:', error);
+        return res.status(500).json({ message: 'Error joining event', error: error.message });
+    }
+});
+
+
+app.delete('/events/:eventId/participants', async (req, res) => {
+    const eventId = req.params.eventId;
+    const userId = req.user.id; 
+
+    try {
+       
+        const [existingParticipant] = await db.query(
+            'SELECT * FROM participants WHERE eventId = ? AND userId = ?',
+            [eventId, userId]
+        );
+
+        if (existingParticipant.length === 0) {
+            return res.status(400).json({ message: 'User is not a participant' });
+        }
+
+       
+        await db.query(
+            'DELETE FROM participants WHERE eventId = ? AND userId = ?',
+            [eventId, userId]
+        );
+
+        return res.status(200).json({ message: 'User successfully left the event' });
+    } catch (error) {
+        console.error('Error leaving event:', error);
+        return res.status(500).json({ message: 'Error leaving event', error: error.message });
+    }
 });

@@ -8,10 +8,14 @@ const init = async () => {
         id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
         description TEXT,
+        type VARCHAR(255),
         date DATETIME NOT NULL,
         location VARCHAR(255) NOT NULL,
+        image_url VARCHAR(255),
         organizerId INT,
         status ENUM('active', 'cancelled') NOT NULL DEFAULT 'active',
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         FOREIGN KEY (organizerId) REFERENCES users(id)
       )
     `);
@@ -25,7 +29,9 @@ const init = async () => {
         eventId INT,
         message TEXT,
         status VARCHAR(20) DEFAULT 'unread',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (eventId) REFERENCES events(id),
+        FOREIGN KEY (recipientId) REFERENCES users(id)
       )
     `);
 
@@ -36,6 +42,7 @@ const init = async () => {
         eventId INT,
         userId INT,
         status ENUM('confirmed', 'pending') DEFAULT 'pending',
+        applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (eventId) REFERENCES events(id),
         FOREIGN KEY (userId) REFERENCES users(id)
       )
@@ -60,6 +67,7 @@ const init = async () => {
         userId INT,
         rating INT,
         review TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (eventId) REFERENCES events(id),
         FOREIGN KEY (userId) REFERENCES users(id)
       )
