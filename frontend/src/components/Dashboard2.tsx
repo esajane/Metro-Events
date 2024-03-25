@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../AuthContext';
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../AuthContext";
 import {
   Drawer,
   AppBar,
@@ -18,20 +18,34 @@ import {
   Button,
   Avatar,
   TextField,
-} from '@mui/material';
-import dayjs from 'dayjs';
-import { DemoContainer } from '@mui/x-date-pickers/internals/demo';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
-import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import InboxIcon from '@mui/icons-material/MoveToInbox';
-import StarIcon from '@mui/icons-material/Star';
-import SendIcon from '@mui/icons-material/Send';
-import DraftsIcon from '@mui/icons-material/Drafts';
-import Modal from '@mui/material/Modal';
+  ListItemButton,
+} from "@mui/material";
+import dayjs from "dayjs";
+import { DemoContainer } from "@mui/x-date-pickers/internals/demo";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import EventIcon from "@mui/icons-material/Event";
+import NotificationsIcon from "@mui/icons-material/Notifications";
+import SendIcon from "@mui/icons-material/Send";
+import DraftsIcon from "@mui/icons-material/Drafts";
+import Modal from "@mui/material/Modal";
 
-import Notify from './Notification';
-import { Snackbar, Stack } from '@mui/joy';
+import Notify from "./Notification";
+import { Snackbar, Stack } from "@mui/joy";
+import axios from "axios";
+
+function convertDateFormat(dateString) {
+  const options = {
+    month: "long",
+    day: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  };
+  const date = new Date(dateString);
+  return date.toLocaleDateString("en-US", options);
+}
 
 const drawerWidth = 240;
 
@@ -39,6 +53,47 @@ const Dashboard = () => {
   const { auth, logout } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [focusedIndex, setFocusedIndex] = useState(0);
+  const [events, setEvents] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [eventDetails, setEventDetails] = useState({
+    name: "",
+    description: "",
+    location: "",
+    date: "",
+  });
+
+  useEffect(() => {
+    const fetchEvents = async () => {
+      const response = await axios.get("http://localhost:3000/events", {
+        headers: {
+          Authorization: `Bearer ${auth.token}`,
+        },
+      });
+
+      setEvents(response.data);
+    };
+
+    const fetchNotifications = async () => {
+      const response = await axios.get(
+        "http://localhost:3000/events/notifications",
+        {
+          headers: {
+            Authorization: `Bearer ${auth.token}`,
+          },
+        }
+      );
+
+      setNotifications(response.data);
+    };
+
+    fetchEvents();
+    fetchNotifications();
+  }, [auth.token]);
+
+  useEffect(() => {
+    console.log(notifications);
+  }, [notifications]);
 
   const handleOpen = () => setOpen(true);
   const handleClose = () => setOpen(false);
@@ -46,51 +101,63 @@ const Dashboard = () => {
   const [notificationOpen, setNotificationOpen] = useState(false);
 
   const today = dayjs();
-  const minDate = today.startOf('day');
-
+  const minDate = today.startOf("day");
   const [selectedDate, setSelectedDate] = useState(minDate);
+
+  useEffect(() => {
+    setEventDetails({ ...eventDetails, date: selectedDate.toISOString() });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate]);
 
   const handleLogout = () => {
     logout();
-    navigate('/login');
+    navigate("/login");
+  };
+
+  const handleCreateEvent = async () => {
+    const response = await fetch("http://localhost:3000/events", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${auth.token}`,
+      },
+      body: JSON.stringify(eventDetails),
+    });
+
+    const data = await response.json();
+    // event info is at data.event
+    setEvents([...events, data.event]);
+    handleClose();
+  };
+
+  const handleItemClick = (index) => {
+    setFocusedIndex(index);
   };
 
   const notify = () => {
     setNotificationOpen((prevOpen) => !prevOpen);
   };
 
-  console.log(auth);
-
-  const events = [
-    {
-      name: 'Trail Biking Bonanza',
-      date: 'April 12, 2024',
-      type: 'Trail Biking',
-    },
-    { name: 'Downtown Zumba', date: 'May 8, 2024', type: 'Zumba Session' },
-    // Add more events here...
-  ];
-
   const style = {
-    position: 'absolute' as const,
-    top: '50%',
-    left: '50%',
-    transform: 'translate(-50%, -50%)',
+    position: "absolute" as const,
+    top: "50%",
+    left: "50%",
+    transform: "translate(-50%, -50%)",
     width: 900,
-    bgcolor: 'background.paper',
-    border: '2px solid #000',
+    bgcolor: "background.paper",
+    border: "2px solid #000",
     boxShadow: 24,
     p: 4,
   };
 
   return (
-    <Box sx={{ display: 'flex' }}>
+    <Box sx={{ display: "flex" }}>
       <CssBaseline />
       <AppBar
         position="fixed"
         sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}
       >
-        <Toolbar style={{ justifyContent: 'space-between' }}>
+        <Toolbar style={{ justifyContent: "space-between" }}>
           <Typography variant="h6" noWrap component="div">
             Username: {auth?.user?.username}
           </Typography>
@@ -106,28 +173,30 @@ const Dashboard = () => {
           flexShrink: 0,
           [`& .MuiDrawer-paper`]: {
             width: drawerWidth,
-            boxSizing: 'border-box',
+            boxSizing: "border-box",
           },
         }}
       >
         <Toolbar />
-        <Box sx={{ overflow: 'auto' }}>
-          <Button
-            className="p-4"
-            variant="contained"
-            size="large"
-            style={{ margin: '8px' }}
-            onClick={handleOpen}
-          >
-            Create Event
-          </Button>
+        <Box sx={{ overflow: "auto" }}>
+          {auth.user?.role === "organizer" && (
+            <Button
+              className="p-4"
+              variant="contained"
+              size="large"
+              style={{ margin: "8px" }}
+              onClick={handleOpen}
+            >
+              Create Event
+            </Button>
+          )}
           <Modal open={open} onClose={handleClose}>
             <Box sx={style}>
               <Typography
                 id="modal-modal-title"
                 variant="h6"
                 component="h2"
-                style={{ margin: '5px' }}
+                style={{ margin: "5px" }}
               >
                 Create Event
               </Typography>
@@ -135,22 +204,40 @@ const Dashboard = () => {
                 variant="outlined"
                 label="Name"
                 fullWidth
-                style={{ margin: '3px' }}
+                value={eventDetails.name}
+                onChange={(e) =>
+                  setEventDetails({ ...eventDetails, name: e.target.value })
+                }
+                style={{ margin: "3px" }}
               />
               <TextField
                 variant="outlined"
                 label="Description"
                 fullWidth
-                style={{ margin: '3px' }}
+                value={eventDetails.description}
+                onChange={(e) =>
+                  setEventDetails({
+                    ...eventDetails,
+                    description: e.target.value,
+                  })
+                }
+                style={{ margin: "3px" }}
               />
               <TextField
                 variant="outlined"
                 label="Location"
                 fullWidth
-                style={{ margin: '3px' }}
+                value={eventDetails.location}
+                onChange={(e) =>
+                  setEventDetails({
+                    ...eventDetails,
+                    location: e.target.value,
+                  })
+                }
+                style={{ margin: "3px" }}
               />
               <LocalizationProvider dateAdapter={AdapterDayjs}>
-                <DemoContainer components={['DatePicker']}>
+                <DemoContainer components={["DatePicker"]}>
                   <DatePicker
                     label="Date"
                     minDate={minDate}
@@ -162,56 +249,90 @@ const Dashboard = () => {
               <Button
                 variant="contained"
                 size="large"
-                style={{ margin: '8px' }}
+                onClick={handleCreateEvent}
+                style={{ margin: "8px" }}
               >
                 Confirm
               </Button>
             </Box>
           </Modal>
           <List>
-            {['Inbox', 'Starred', 'Send email', 'Drafts'].map((text, index) => (
-              <ListItem button key={text}>
-                <ListItemIcon>
-                  {index === 0 && <InboxIcon />}
-                  {index === 1 && <StarIcon />}
-                  {index === 2 && <SendIcon />}
-                  {index === 3 && <DraftsIcon />}
-                </ListItemIcon>
-                <ListItemText primary={text} />
-              </ListItem>
-            ))}
+            {["Events", "Notifications", "Send email", "Drafts"].map(
+              (text, index) => (
+                <ListItemButton
+                  key={text}
+                  autoFocus={index === 0}
+                  selected={focusedIndex === index}
+                  onClick={() => handleItemClick(index)}
+                >
+                  <ListItemIcon>
+                    {index === 0 && <EventIcon />}
+                    {index === 1 && <NotificationsIcon />}
+                    {index === 2 && <SendIcon />}
+                    {index === 3 && <DraftsIcon />}
+                  </ListItemIcon>
+                  <ListItemText primary={text} />
+                </ListItemButton>
+              )
+            )}
           </List>
         </Box>
       </Drawer>
       <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
         <Toolbar />
         <Typography variant="h4" gutterBottom></Typography>
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
-            gap: 2,
-          }}
-        >
-          {events.map((event, index) => (
-            <Card key={index} sx={{ maxWidth: 345 }}>
-              <CardContent>
-                <Typography gutterBottom variant="h5" component="div">
-                  {event.name}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {event.date}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {event.type}
-                </Typography>
-              </CardContent>
-              <CardActions>
-                <Button size="small">Learn More</Button>
-              </CardActions>
-            </Card>
-          ))}
-        </Box>
+        {focusedIndex === 0 ? (
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: "repeat(3, 1fr)",
+              gap: 2,
+            }}
+          >
+            {events.map((event, index) => (
+              <Card key={index} sx={{ maxWidth: 345 }}>
+                <CardContent>
+                  <Typography gutterBottom variant="h5" component="div">
+                    {event.name}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {convertDateFormat(event.date)}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {event.description}
+                  </Typography>
+                </CardContent>
+                <CardActions>
+                  <Button size="small">Learn More</Button>
+                </CardActions>
+              </Card>
+            ))}
+          </Box>
+        ) : (
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+            }}
+          >
+            {notifications.map((notification, index) => (
+              <Card key={index} sx={{ minWidth: 500 }}>
+                <CardContent>
+                  <Typography gutterBottom variant="h5" component="div">
+                    {notification.eventName}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {convertDateFormat(notification.created_at)}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {notification.message}
+                  </Typography>
+                </CardContent>
+              </Card>
+            ))}
+          </Box>
+        )}
       </Box>
       {/* Notification */}
     </Box>
