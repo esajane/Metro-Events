@@ -54,7 +54,10 @@ exports.createEvent = async (req, res) => {
       "INSERT INTO events (name, description, date, location, organizerId, status) VALUES (?, ?, ?, ?, ?, ?)",
       [name, description, date, location, organizerId, "active"]
     );
-    res.status(201).json({ message: "Event created successfully" });
+    // return the event
+    res
+      .status(201)
+      .json({ event: { name, description, date, location, organizerId } });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Internal server error" });
@@ -233,7 +236,12 @@ exports.getUserNotifications = async (req, res) => {
 
   try {
     const [notificationRows] = await db.query(
-      "SELECT * FROM notifications WHERE recipientId = ?",
+      `
+      SELECT n.id, n.type, n.recipientId, e.name as eventName, e.description as eventDescription, n.message, n.status, n.created_at
+      FROM notifications n
+      LEFT JOIN events e ON n.eventId = e.id
+      WHERE n.recipientId = ?
+    `,
       [user.id]
     );
 
